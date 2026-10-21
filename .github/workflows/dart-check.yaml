@@ -68,9 +68,14 @@ jobs:
             | tee flutter-analyze.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            # 每个 step 最多 10 条注解，取前 10 条非空行
-            # `%` 是工作流命令的转义字符，原样输出会让注解被截断
-            grep -v '^[[:space:]]*$' flutter-analyze.log | head -10 | \
+            # analyze 会先跑一遍 pub get，前面全是依赖解析的噪音，真正的问题在
+            # 「Analyzing ...」之后。找不到该行时退回最后 10 行。
+            # 每个 step 最多 10 条注解，`%` 是工作流命令的转义字符，需转义。
+            REPORT=$(awk '/^Analyzing /{found=1} found' flutter-analyze.log)
+            if [ -z "$REPORT" ]; then
+              REPORT=$(tail -n 10 flutter-analyze.log)
+            fi
+            printf '%s\n' "$REPORT" | grep -v '^[[:space:]]*$' | head -10 | \
               while IFS= read -r line; do
                 echo "::error title=flutter analyze::${line//%/%%}"
               done
