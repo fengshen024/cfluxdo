@@ -23,6 +23,7 @@ import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
 import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
+import '../webview_egress_family_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'accel_doh_auth_service.dart';
 import 'accel_doh_nodes.dart';
@@ -349,10 +350,17 @@ class NetworkSettingsService {
       current.gatewayEnabled &&
       _rustProxyService.isRunning;
 
-  /// 本地动态优选只在 Android 网关模式下跑：DoH 开着、没有上游代理、网关开关开着
+  /// 本地动态优选只在移动端网关模式下跑：DoH 开着、没有上游代理、网关开关开着
   /// （网关/上游的判断和 [_applyProxyState] 里启动代理时用的一致）
+  ///
+  /// iOS 同样启用：优选与 ECH 握手全在 Rust 侧完成（core/doh_proxy/select.rs），
+  /// 不依赖任何 Android API；Dio 走 gateway 模式改写为 `http://127.0.0.1:port`，
+  /// 而 ATS 不作用于 IP 字面量地址，回环明文请求可直接发出。
+  ///
+  /// 已知限制：iOS 17 以下 `WKWebView` 没有可用的代理 API（见 [_applyWebViewProxy]），
+  /// 因此 WebView 内的流量不经过本地网关，只有 API 请求享受优选/ECH。
   bool get selectorEligible =>
-      Platform.isAndroid &&
+      (Platform.isAndroid || Platform.isIOS) &&
       current.dohEnabled &&
       !_proxyService.current.isValid &&
       WebViewMitmPolicy.useGatewayMode(
@@ -789,6 +797,10 @@ class NetworkSettingsService {
       await Future<void>.delayed(const Duration(milliseconds: 16));
     }
     if (!shouldRunLocalProxy) {
+      WebViewEgressFamilyService.localProxyRunning = false;
+      // 网关停了就没有需要对齐的 API 出口：撤销强制族，免得下次启动先按
+      // 上一张网络测出的旧地址族连一轮
+      unawaited(WebViewEgressFamilyService.instance.clear());
       try {
         await _stopLocalProxyUnlessRequiredByWebView();
         if (_pendingStart) {
@@ -834,7 +846,9 @@ class NetworkSettingsService {
 
       final upstream = GatewayUpstream.resolve(
         applicationProxy: _proxyService.current,
-        systemProxyUrl: Platform.isWindows
+        // Windows / iOS 都跟随系统代理：WebView 走系统代理而 API 直连时，
+        // cf_clearance 绑的出口 IP 与 API 出口不一致，验证永远过不去
+        systemProxyUrl: SystemProxyService.isSupported
             ? SystemProxyService.instance.effectiveProxyUrl
             : null,
       );
@@ -999,6 +1013,13 @@ class NetworkSettingsService {
         isApplying.value = false;
         await refreshDnsCacheStats();
         unawaited(refreshSelectStatus());
+        // 网关起来 / 换上游后 WebView 出口族可能已经变了（或首次需要测），
+        // 让地址族对齐服务复查一次；非 iOS 17 以下场景内部直接返回
+        WebViewEgressFamilyService.localProxyRunning =
+            _rustProxyService.isRunning;
+        WebViewEgressFamilyService.instance.scheduleEvaluation(
+          reason: 'proxy_applied',
+        );
         _touch();
       }
     }
@@ -1200,6 +1221,26 @@ class NetworkSettingsService {
     return _isiOS17OrAboveCache!;
   }
 
+  /// WebView 是否能被指到本地网关（iOS 17+ 才有 `setProxyOverride`）。
+  ///
+  /// 首帧还没读到系统版本时按「不支持」处理：出口地址族对齐会先按 WebView
+  /// 的族压一次，等版本确定后再按真实情况决定是否需要继续对齐。
+  bool get webViewProxySupported {
+    if (Platform.isAndroid || Platform.isWindows) return true;
+    if (Platform.isIOS) return _isiOS17OrAboveCache ?? false;
+    return false;
+  }
+
+  /// 预热一次系统版本判断（启动期调用，避免首个请求时才读）
+  Future<void> primePlatformCapabilities() async {
+    if (Platform.isIOS) {
+      await _isiOS17OrAbove();
+      WebViewEgressFamilyService.webViewProxySupported = webViewProxySupported;
+    } else if (Platform.isMacOS) {
+      await _isMacOS14OrAbove();
+    }
+  }
+
   void _touch() {
     _version++;
     // 通过重新赋值触发监听器更新
@@ -1320,7 +1361,7 @@ class NetworkSettingsService {
   }
 
   void _handleSystemProxyChanged() {
-    if (_prefs == null || !Platform.isWindows) return;
+    if (_prefs == null || !SystemProxyService.isSupported) return;
     // 应用内代理拥有更高优先级；只有走系统代理回退时才需要重启网关。
     if (_proxyService.current.isValid || !shouldRunLocalProxy) return;
     _scheduleApplyProxyState();

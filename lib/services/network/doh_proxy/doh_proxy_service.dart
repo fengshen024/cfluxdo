@@ -38,6 +38,8 @@ class DohProxyService {
   String? _currentServerIp;
   bool? _currentMitmConnect;
   bool? _currentH2Mitm;
+  /// 最近一次下发的强制地址族（true = IPv6），网关重启后按它补发
+  bool? _forcedFamily;
   String? _currentUpstreamSignature;
   String? _currentDohRoutesUrl;
   String? _currentSelectMode;
@@ -328,6 +330,9 @@ class DohProxyService {
         _isRunning = true;
         _currentEnableDoh = enableDoh;
         _currentGatewayMode = gatewayMode;
+        // 重启会换 resolver 实例，之前下发的强制地址族随之丢失：把最近一次
+        // 的意图补回去（无强制时 no-op）
+        _restoreForcedFamilyAfterStart();
         _currentDohServer = dohServer;
         _currentDohServerEch = dohServerEch;
         _currentDohBootstrapSignature = _buildBootstrapSignature(
@@ -1000,6 +1005,41 @@ class DohProxyService {
       response.close();
       return result is Map && result['ok'] == true && result['applied'] == true;
     });
+  }
+
+  /// 运行时强制出站地址族（与 WebView 实际出口对齐）；null 取消强制
+  ///
+  /// 只在 FFI 可用的平台有效；进程模式 / 库太旧 / 代理未运行返回 false。
+  /// 返回 true 表示 Rust 侧已应用（含无变化）
+  Future<bool> setForcedFamily(bool? preferIpv6) async {
+    // 记住意图：网关重启会换 resolver 实例，Rust 侧的强制族随之丢失
+    _forcedFamily = preferIpv6;
+    if (!DohProxyFfi.isAvailable) return false;
+    if (!_isRunning) {
+      // 未运行时无需下发：启动成功后会按 _forcedFamily 补发
+      return false;
+    }
+    return _enqueueFfiOp(() async {
+      final sendPort = await _ensureFfiIsolate();
+      final response = ReceivePort();
+      sendPort.send({
+        'cmd': 'set_forced_family',
+        'preferIpv6': preferIpv6,
+        'replyTo': response.sendPort,
+      });
+      final result = await response.first;
+      response.close();
+      return result is Map && result['ok'] == true;
+    });
+  }
+
+  /// 当前下发的强制地址族（null = 未强制），供诊断展示
+  bool? get forcedFamily => _forcedFamily;
+
+  void _restoreForcedFamilyAfterStart() {
+    final forced = _forcedFamily;
+    if (forced == null) return;
+    unawaited(setForcedFamily(forced));
   }
 
   /// 经 Rust 的 DoH 客户端向加速服务端发 HTTP 请求，返回 (status, body)
@@ -1722,6 +1762,11 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
         case 'select_rerace':
           final started = DohProxyFfi.instance.reraceSelection();
           replyTo.send({'ok': true, 'started': started});
+          return;
+        case 'set_forced_family':
+          final preferIpv6 = message['preferIpv6'] as bool?;
+          final applied = DohProxyFfi.instance.setForcedFamily(preferIpv6);
+          replyTo.send({'ok': applied});
           return;
         case 'set_share_measurements':
           final enabled = message['enabled'] as bool? ?? false;

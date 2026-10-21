@@ -205,9 +205,10 @@ bool requestAllowsRhttpAdapter(RequestOptions options) {
 /// 的 Rust 网关，TLS 在 Rust 侧完成，这里只需要一个可靠的本地 HTTP 客户端。
 HttpClientAdapter _createNativeAdapter() {
   debugPrint('[DIO] Dynamic adapter -> IOHttpClientAdapter');
-  // 与 RhttpAdapter 一致:跟随系统代理（目前仅 Windows 实现，其它平台恒为
-  // null 即直连），保持与 WebView 同一出口（cf_clearance 绑 IP，出口不一致
-  // 会导致 CF 验证无限循环）。findProxy 每个请求求值，代理开关变化即时生效。
+  // 与 RhttpAdapter 一致:跟随系统代理（Windows 注册表 / iOS CFNetwork，
+  // 其它平台恒为 null 即直连），保持与 WebView 同一出口（cf_clearance 绑 IP，
+  // 出口不一致会导致 CF 验证无限循环）。findProxy 每个请求求值，代理开关
+  // 变化即时生效。
   return IOHttpClientAdapter(
     createHttpClient: () {
       final client = HttpClient();

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/background/ios_background_fetch.dart';
 import '../../services/message_bus_service.dart';
 import '../../services/preloaded_data_service.dart';
 import '../discourse_providers.dart';
@@ -396,6 +397,12 @@ class MessageBusInitNotifier extends Notifier<void> {
     final preloaded = PreloadedDataService();
     messageBus.configure(
       baseUrl: preloaded.longPollingBaseUrl,
+      sharedSessionKey: preloaded.sharedSessionKey,
+    );
+
+    // 同步保存到 SharedPreferences 供 iOS 后台任务使用（独立 Isolate 读不到内存态）
+    saveBackgroundMessageBusConfig(
+      longPollingBaseUrl: preloaded.longPollingBaseUrl,
       sharedSessionKey: preloaded.sharedSessionKey,
     );
 

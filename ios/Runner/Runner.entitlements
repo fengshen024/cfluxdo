@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  cfluxdo: 已移除 com.apple.developer.web-browser。
+	  该 entitlement 属 Apple 受限授权（默认浏览器 / 替代浏览器引擎，需向 Apple 申请，
+	  且与 EU DMA 发行相关），免费个人开发者账号无法签署，会导致真机签名失败。
+	  cfluxdo 不注册为系统默认浏览器，也不使用 BrowserEngineKit，因此不需要它。
+	-->
+</dict>
+</plist>

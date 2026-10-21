@@ -314,6 +314,8 @@ class DohProxyFfi {
   Pointer<Utf8> Function()? _dohProxySelectStatus;
   int Function()? _dohProxySelectRerace;
   int Function(int, Pointer<Utf8>)? _dohProxySetShareMeasurements;
+  // 运行时强制出站地址族（与 WebView 出口对齐），同样是可选符号
+  int Function(int)? _dohProxySetForcedFamily;
   late void Function(Pointer<Utf8>) _dohProxyFreeString;
 
   /// Initialize FFI bindings
@@ -498,6 +500,16 @@ class DohProxyFfi {
             .asFunction();
       } catch (_) {
         _dohProxySetShareMeasurements = null;
+      }
+
+      try {
+        _dohProxySetForcedFamily = _lib!
+            .lookup<NativeFunction<Int32 Function(Int32)>>(
+              'doh_proxy_set_forced_family',
+            )
+            .asFunction();
+      } catch (_) {
+        _dohProxySetForcedFamily = null;
       }
 
       // doh_proxy_generate_ca 是新增符号，旧版本库可能没有，可选绑定
@@ -990,6 +1002,22 @@ class DohProxyFfi {
     final fn = _dohProxySelectRerace;
     if (fn == null) return false;
     return fn() == 1;
+  }
+
+  /// 运行时强制出站地址族，让 API 与 WebView 走同一个出口 IP
+  ///
+  /// [preferIpv6] 为 null 表示取消强制。true 表示已应用（含无变化），
+  /// false 表示还没有可用的 resolver（通常是 DoH 未开启）或库不支持
+  bool setForcedFamily(bool? preferIpv6) {
+    if (!_initialized && !initialize()) return false;
+    final fn = _dohProxySetForcedFamily;
+    if (fn == null) return false;
+    return fn(switch (preferIpv6) {
+          true => 1,
+          false => 0,
+          null => -1,
+        }) ==
+        1;
   }
 
   /// 开关「帮助优选」（把握手测量结果分享给 cfhub）

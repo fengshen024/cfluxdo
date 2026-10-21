@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'doh/network_settings_service.dart';
+import 'ios_network_env.dart';
 import 'proxy/proxy_settings_service.dart';
 import 'system_proxy_service.dart';
 import 'windows_vpn_adapter_detector.dart';
@@ -64,6 +65,17 @@ class VpnAutoToggleService {
   bool _lastHasWindowsVpnAdapter = false;
   bool _shouldSuppress = false;
 
+  /// iOS 原生隧道信号（`connectivity_plus` 在 iOS 上不会报告 vpn）
+  bool _lastHasIosTunnel = false;
+  bool _iosSignalWatchStarted = false;
+
+  void _ensureIosSignalWatch() {
+    if (_iosSignalWatchStarted || !Platform.isIOS) return;
+    _iosSignalWatchStarted = true;
+    // 原生快照由 IosNetworkEnvService 每 10s 兜底轮询，这里只跟状态变化
+    IosNetworkEnvService.instance.notifier.addListener(_applyLastKnownState);
+  }
+
   /// Windows 开关 TUN 网卡 / 系统代理常常不产生 connectivity 事件,单靠事件
   /// 驱动会漏检(用户开了网卡界面却一直显示"VPN 未连接")。补两条信号:
   /// - 订阅 [SystemProxyService.version](其内部已有 10s 注册表节拍);
@@ -99,21 +111,30 @@ class VpnAutoToggleService {
     required List<ConnectivityResult> connectivityResults,
     required bool hasWindowsVpnAdapter,
     bool systemProxyEnabled = false,
+    bool hasIosTunnel = false,
   }) {
     return connectivityResults.contains(ConnectivityResult.vpn) ||
         hasWindowsVpnAdapter ||
-        systemProxyEnabled;
+        systemProxyEnabled ||
+        hasIosTunnel;
   }
 
-  /// TUN 名称识别目前仅补充状态展示，不扩大自动压制的触发范围。
+  /// TUN 名称识别在 Windows 上仅补充状态展示，不扩大自动压制的触发范围。
   ///
   /// Windows 上部分 TUN 被报告为以太网；若仅因名称命中就立即关闭 DoH/上游
   /// 代理，会让正在使用的传输适配器在启动阶段切换，改变 Dio 的 TLS/CF 信任
   /// 上下文。先保持上游原有语义：只有 connectivity_plus 明确报告 VPN 时才
   /// 执行自动压制。
+  ///
+  /// iOS 不同：`connectivity_plus` 永远不会报告 vpn，原生隧道信号是唯一
+  /// 可用的依据，所以它必须参与自动压制——否则整条逻辑在 iOS 上是死代码。
+  /// [hasIosTunnel] 只由 iOS 分支传 true，其它平台恒为 false。
   @visibleForTesting
-  static bool shouldAutoSuppress(List<ConnectivityResult> connectivityResults) {
-    return connectivityResults.contains(ConnectivityResult.vpn);
+  static bool shouldAutoSuppress(
+    List<ConnectivityResult> connectivityResults, {
+    bool hasIosTunnel = false,
+  }) {
+    return connectivityResults.contains(ConnectivityResult.vpn) || hasIosTunnel;
   }
 
   @visibleForTesting
@@ -154,6 +175,12 @@ class VpnAutoToggleService {
       SystemProxyService.instance.refresh();
       _redetectWindows();
     }
+    if (value && Platform.isIOS) {
+      _lastHasIosTunnel = (await IosNetworkEnvService.instance.refresh())
+          .vpnActive;
+      _applyLastKnownState();
+      return;
+    }
 
     if (!value) {
       // 关闭功能时，如果有活跃压制则立即恢复
@@ -174,6 +201,8 @@ class VpnAutoToggleService {
     if (Platform.isWindows) {
       SystemProxyService.instance.refresh();
       _redetectWindows();
+    } else if (Platform.isIOS) {
+      unawaited(IosNetworkEnvService.instance.refresh());
     }
   }
 
@@ -183,6 +212,12 @@ class VpnAutoToggleService {
     if (Platform.isWindows) {
       final generation = ++_windowsDetectionGeneration;
       unawaited(_detectWindowsVpnAndApply(results, generation));
+      return;
+    }
+    if (Platform.isIOS) {
+      // 换网后原生状态可能变（例如 VPN 断开）：先立即重读，不等兜底节拍
+      unawaited(IosNetworkEnvService.instance.refresh());
+      _applyLastKnownState();
       return;
     }
     final hasVpn = results.contains(ConnectivityResult.vpn);
@@ -230,14 +265,21 @@ class VpnAutoToggleService {
   }
 
   void _applyLastKnownState() {
+    if (Platform.isIOS) {
+      _lastHasIosTunnel = IosNetworkEnvService.instance.current.vpnActive;
+    }
     _applyVpnState(
       resolveVpnActive(
         connectivityResults: _lastConnectivityResults,
         hasWindowsVpnAdapter: _lastHasWindowsVpnAdapter,
         systemProxyEnabled: Platform.isWindows &&
             SystemProxyService.instance.effectiveProxyUrl != null,
+        hasIosTunnel: _lastHasIosTunnel,
       ),
-      shouldSuppress: shouldAutoSuppress(_lastConnectivityResults),
+      shouldSuppress: shouldAutoSuppress(
+        _lastConnectivityResults,
+        hasIosTunnel: _lastHasIosTunnel,
+      ),
     );
   }
 
@@ -245,15 +287,22 @@ class VpnAutoToggleService {
   Future<void> syncInitialState(List<ConnectivityResult> results) async {
     _lastConnectivityResults = results;
     _ensureWindowsSignalWatch();
+    _ensureIosSignalWatch();
     final hasWindowsVpnAdapter = Platform.isWindows
         ? (await WindowsVpnAdapterDetector.detect()).active
         : false;
     _lastHasWindowsVpnAdapter = hasWindowsVpnAdapter;
+    if (Platform.isIOS) {
+      // 必须拿到一次真实原生快照：启动时若 VPN 已开，要在首个请求前压制
+      _lastHasIosTunnel = (await IosNetworkEnvService.instance.refresh())
+          .vpnActive;
+    }
     final hasVpn = resolveVpnActive(
       connectivityResults: results,
       hasWindowsVpnAdapter: hasWindowsVpnAdapter,
       systemProxyEnabled: Platform.isWindows &&
           SystemProxyService.instance.effectiveProxyUrl != null,
+      hasIosTunnel: _lastHasIosTunnel,
     );
     final mode = detectionMode;
     vpnActiveNotifier.value = resolveDetection(
@@ -261,7 +310,10 @@ class VpnAutoToggleService {
       mode: mode,
     );
     _shouldSuppress = resolveDetection(
-      automaticValue: shouldAutoSuppress(results),
+      automaticValue: shouldAutoSuppress(
+        results,
+        hasIosTunnel: _lastHasIosTunnel,
+      ),
       mode: mode,
     );
 

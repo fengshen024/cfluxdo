@@ -139,6 +139,12 @@ dependencies:
   chinese_font_library: ^1.2.0
 
   flutter_foreground_task: ^9.2.0  # Android 前台服务保活
+  # iOS 后台通知:iOS 不允许长期前台服务,改用 BGTaskScheduler 每 15 分钟
+  # 唤醒一次做单次轮询(见 lib/services/background/ios_background_fetch.dart)。
+  # 0.10.x 要求 Flutter >=3.38(本项目 3.44.8),iOS 侧解析到 workmanager_apple
+  # 0.9.11;AppDelegate 用的是该版本提供的
+  # registerPeriodicTask(withIdentifier:earliestBeginInSeconds:)。
+  workmanager: ^0.10.10            # iOS BGTaskScheduler
 
   video_player: any
   # 视频播放期间防熄屏(自绘播放器直接依赖)。1.4+ 依赖 package_info_plus ^9

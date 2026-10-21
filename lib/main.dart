@@ -30,7 +30,9 @@ import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'services/network/cookie/csrf_token_service.dart';
+import 'services/network/ios_network_env.dart';
 import 'services/network/system_proxy_service.dart';
+import 'services/network/webview_egress_family_service.dart';
 import 'services/network/cookie/cookie_devtools_extension.dart';
 import 'services/network/cookie/cookie_jar_service.dart';
 import 'services/network/cookie/cookie_store_observer.dart';
@@ -304,10 +306,27 @@ Future<void> main() async {
 
   // Windows 固定系统代理必须先于本地 DoH/WebView 网关读取，网关才能按
   // 「应用代理 > 系统代理 > 直连」选择首次启动的上游出口。
+  // iOS 的系统代理与 VPN 状态来自同一个原生快照，先把首帧读出来再启动网关，
+  // 否则网关会先按直连起一轮、等代理状态到达后再重启。
   if (Platform.isWindows) {
+    SystemProxyService.instance.start();
+  } else if (Platform.isIOS) {
+    try {
+      await IosNetworkEnvService.instance
+          .refresh()
+          .timeout(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('[Main] iOS 网络环境读取失败: $e');
+    }
+    // 隧道开关不一定产生 connectivity 事件，靠 10s 兜底节拍发现 VPN 起停
+    // （SystemProxyService.start() 内部也会拉起同一个快照轮询）
+    IosNetworkEnvService.instance.start();
     SystemProxyService.instance.start();
   }
   await NetworkSettingsService.instance.initialize(prefs);
+  // iOS 17 以下 WebView 不走本地网关，需要按 WebView 的出口地址族对齐 API；
+  // 先把系统版本判断读出来，避免首次请求时才走平台通道
+  await NetworkSettingsService.instance.primePlatformCapabilities();
   // WindowsWebViewEnvironmentService 必须等 NetworkSettingsService 把本次
   // 会话真正要用的代理端口定下来之后再创建 Environment。之前放在最早那批
   // 并行初始化里,等的是"猜的"8s 超时——NetworkSettingsService 前面还排
@@ -327,6 +346,9 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('[Main] 初始 VPN 状态同步失败: $e');
   }
+  // iOS 17 以下 WebView 不走本地网关：挂上出口地址族对齐的触发源
+  // （启动、换网、网关应用完成）。其它平台内部直接返回
+  WebViewEgressFamilyService.instance.start();
 
   // 必须等 DoH / 系统代理 / VPN 自动切换全部落定后再预热 Cookie。
   // Windows 设置本地代理会销毁并重建 WebView2 Environment；若提前预热，
@@ -1025,7 +1047,8 @@ class _MainPageState extends ConsumerState<MainPage>
   ///
   /// 版本标记写在最后：弹窗期间崩溃则下次重弹，保证用户一定看过说明。
   Future<void> _maybeShowCfSelectNotice() async {
-    if (!Platform.isAndroid) return;
+    // iOS 同样弹：本地优选在 iOS 上也是一等连接方式（见 selectorEligible）
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     final version = (await PackageInfo.fromPlatform()).version;
     final prefs = ref.read(sharedPreferencesProvider);
     final stored = prefs.getString(
