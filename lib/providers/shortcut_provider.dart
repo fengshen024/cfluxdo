@@ -3,6 +3,7 @@ import 'dart:convert';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -375,10 +376,19 @@ class ShortcutScopeBinding {
     _registry.unregister(scope: scope, owner: _owner);
   }
 
+  /// 推迟解绑:在构建期(build/finalizeTree)改注册表会让监听方在构建中
+  /// markNeedsBuild,必须推到帧末。帧外没有这个风险,直接解绑。
+  ///
+  /// 不能用 `Future(...)`:那是零延时 Timer,测试里 `pump()` 只冲微任务、
+  /// 不推进时钟,定时器会一直挂着,`testWidgets` 收尾时判定为残留 Timer。
   void disposeDeferred() {
     if (_disposed) return;
-    final disposeNow = dispose;
-    Future(disposeNow);
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => dispose());
+    } else {
+      dispose();
+    }
   }
 }
 

@@ -18,11 +18,19 @@ import 'package:fluxdo/providers/user_content_providers.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/utils/relative_time_clock.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
+import 'package:fluxdo/widgets/topic/topic_card_layout.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../storage/bookmark_hive_test_support.dart';
+
+/// 预置书签的标题 → bookmarkId，供 [_findBookmarkInList] 拼卡片 key
+const Map<String, int> _presetBookmarkIdByTitle = {
+  'Alpha': 101,
+  'Beta': 102,
+};
 
 Topic _bookmarkTopic({
   required int topicId,
@@ -170,10 +178,23 @@ Future<void> _pumpPage(WidgetTester tester) async {
   }
 }
 
+/// 书签列表里的卡片按标题定位。
+///
+/// 默认走自绘卡（`PaintedTopicCard`）：文字画进 canvas，没有 `Text` widget，
+/// 所以不能 `find.text`。卡片的 key 是 `bookmarkTopicIdentity`，书签场景下
+/// 形如 `bookmark:<bookmarkId>`；这里按标题反查 id 再拼 key。
 Finder _findBookmarkInList(String title) {
+  final bookmarkId = _presetBookmarkIdByTitle[title];
+  if (bookmarkId == null) {
+    // 兜底：万一以后加了 widget 版卡片路径，find.text 仍可用
+    return find.descendant(
+      of: find.byType(BookmarksListContent),
+      matching: find.text(title),
+    );
+  }
   return find.descendant(
     of: find.byType(BookmarksListContent),
-    matching: find.text(title),
+    matching: find.byKey(ValueKey('bookmark:$bookmarkId')),
   );
 }
 
@@ -184,7 +205,17 @@ Finder _findWorkspaceTab(String title) {
   );
 }
 
+/// 停掉全局分钟心跳（见 main 里的说明）。
+void _stopMinuteClock() {
+  TopicCardLayout.debugResetClockHook();
+  RelativeTimeClock.instance.debugStop();
+}
+
 void main() {
+  // 自绘卡排版缓存首次排版时会挂上全局分钟心跳（进程级、只挂一次）。
+  // 必须在**用例体内**结尾解绑：tearDown 跑在框架检查残留 Timer 之后，
+  // 放在那里来不及，照样报「A Timer is still pending」。
+
   testWidgets('工作区会复用同一话题标签并在关闭后回到书签页', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     addTearDown(() => PlatformUtils.debugDesktopOverride = null);
@@ -220,7 +251,9 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsNWidgets(2));
+    // 列表卡片（自绘，无 Text）+ 工作区标签各一份
+    expect(_findBookmarkInList('Alpha'), findsOneWidget);
+    expect(_findWorkspaceTab('Alpha'), findsOneWidget);
 
     await tester.tap(_findBookmarkInList('Alpha'));
     await _pumpPage(tester);
@@ -234,10 +267,12 @@ void main() {
 
     expect(find.text('detail:1 active:true'), findsNothing);
     expect(_findWorkspaceTab('Alpha'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList('Alpha'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
+
+    _stopMinuteClock();
   });
 
   testWidgets('离开书签页时会清空工作区标签', (tester) async {
@@ -273,7 +308,7 @@ void main() {
 
     expect(_findWorkspaceTab('Alpha'), findsNothing);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList('Alpha'), findsOneWidget);
 
     await tester.tap(_findBookmarkInList('Alpha'));
     await _pumpPage(tester);
@@ -288,7 +323,9 @@ void main() {
 
     expect(_findWorkspaceTab('Alpha'), findsNothing);
     expect(find.text('detail:1 active:true'), findsNothing);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(_findBookmarkInList('Alpha'), findsOneWidget);
+
+    _stopMinuteClock();
   });
 
   testWidgets('打开书签话题时会把书签上下文传给工作区详情页', (tester) async {
@@ -332,6 +369,8 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('detail:1 bookmark:101 type:Post'), findsOneWidget);
+
+    _stopMinuteClock();
   });
 
   testWidgets('手机端标签页模式会显示数字方框并可打开切换器', (tester) async {
@@ -425,6 +464,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('已打开 1 个'), findsNothing);
+
+    _stopMinuteClock();
   });
 
   testWidgets('手机端工作区返回按钮会回到书签列表并保留已打开话题', (tester) async {
@@ -461,6 +502,8 @@ void main() {
       find.byKey(const ValueKey('bookmark-workspace-mobile-title-bar')),
       findsNothing,
     );
+
+    _stopMinuteClock();
   });
 
   testWidgets('手机端工作区关闭按钮会关闭当前标签页', (tester) async {
@@ -491,6 +534,8 @@ void main() {
     expect(container.read(barVisibilityProvider), 1);
     expect(find.text('detail:1 active:true'), findsNothing);
     expect(_findBookmarkInList('Alpha'), findsOneWidget);
+
+    _stopMinuteClock();
   });
 
   testWidgets('手机端重选底栏书签会回到书签列表', (tester) async {
@@ -522,6 +567,8 @@ void main() {
 
     expect(find.text('detail:1 active:true'), findsNothing);
     expect(_findBookmarkInList('Alpha'), findsOneWidget);
+
+    _stopMinuteClock();
   });
 }
 

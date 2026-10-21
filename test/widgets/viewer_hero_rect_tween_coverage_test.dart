@@ -13,6 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 判据:文件里出现 `Hero(` 且该文件与图片查看器有关(引用 ImageViewerPage /
 /// openViewer / heroTag),就必须出现 viewerHeroRectTween。
+/// 统一成 `/` 再比较：Windows 上 `entity.path` 是 `lib\pages\x.dart`，
+/// 豁免表与清单都按 POSIX 风格写，不归一化会让豁免在 Windows 上静默失效。
+String _posix(String path) => path.replaceAll(r'\', '/');
+
 void main() {
   test('指向查看器的源端都用 HeroImage(或至少挂了飞行起点)', () {
     // 已知豁免:这些文件有 Hero 但不指向图片查看器
@@ -27,7 +31,7 @@ void main() {
 
     for (final entity in Directory('lib').listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final path = entity.path;
+      final path = _posix(entity.path);
       if (exempt.containsKey(path)) continue;
 
       final src = entity.readAsStringSync();
@@ -110,9 +114,9 @@ void main() {
       // openBytes(内存图)没有 Hero 飞行,不在契约内
       if (!src.contains('heroTag')) continue;
 
-      checked.add(entity.path);
+      checked.add(_posix(entity.path));
       final ok = src.contains('heroSourceFit') || src.contains('heroSourceCircular');
-      if (!ok || !src.contains('thumbnailUrl')) offenders.add(entity.path);
+      if (!ok || !src.contains('thumbnailUrl')) offenders.add(_posix(entity.path));
     }
 
     expect(

@@ -6,7 +6,9 @@ import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
-import 'package:fluxdo/widgets/topic/topic_card.dart';
+import 'package:fluxdo/utils/relative_time_clock.dart';
+import 'package:fluxdo/widgets/topic/painted_topic_card.dart';
+import 'package:fluxdo/widgets/topic/topic_card_layout.dart';
 import 'package:fluxdo/widgets/topic/topic_item_builder.dart';
 
 Topic _topic() {
@@ -55,7 +57,9 @@ void main() {
       ),
     );
 
-    final topicCard = find.byType(TopicCard);
+    // `buildTopicItem` 默认走自绘卡（kUsePaintedTopicCard）；widget 版
+    // TopicCard 只在总开关回退时才出现，这里按实际渲染的卡类型取点
+    final topicCard = find.byType(PaintedTopicCard);
     final center = tester.getCenter(topicCard);
     final gesture = await tester.startGesture(
       center,
@@ -67,5 +71,10 @@ void main() {
     await tester.pump();
 
     expect(middleClicked, isTrue);
+
+    // 自绘卡首次排版会挂上进程级分钟心跳（Timer 对齐到下一个分钟边界），
+    // 不摘掉测试收尾会判定为残留 Timer。tearDown 跑在框架检查之后，来不及。
+    TopicCardLayout.debugResetClockHook();
+    RelativeTimeClock.instance.debugStop();
   });
 }

@@ -5,6 +5,8 @@ import 'package:fluxdo/services/network/doh/network_settings_service.dart';
 import 'package:fluxdo/services/network/doh_proxy/doh_proxy_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'doh_test_support.dart';
+
 void main() {
   group('cfluxdo 加速服务器', () {
     test('随机子域名为 12 位小写字母或数字', () {
@@ -48,6 +50,9 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
 
     test('首次启动：默认开启 DoH、选中加速服务器；代理起不来时改为直连', () async {
+      // Windows 上 DoH 走 per-device CA 分支，会调 path_provider；
+      // `flutter test` 没有插件实现，见 doh_test_support.dart
+      addTearDown(await useFakePathProvider());
       SharedPreferences.setMockInitialValues({'doh_proxy_port': 45678});
       final prefs = await SharedPreferences.getInstance();
       final service = NetworkSettingsService.instance;

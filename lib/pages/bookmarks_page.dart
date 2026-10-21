@@ -68,17 +68,22 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
 
   /// 桌面端 Esc 退出书签页(maybePop 会依次经过 PopScope:搜索模式先退
   /// 搜索、手机工作区先回书签标签,最后才真正 pop 路由)。
-  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
-    ref: ref,
-    scope: ShortcutScope.context,
-    // 底栏 tab 形态挂在 IndexedStack 里:不活跃时注册失效,否则截胡
-    // 其他 tab 的 ESC(共享根路由,路由过滤分不出活跃 tab)。
-    enabled: () => widget.isActive,
-  );
+  ///
+  /// 在 [initState] 里立即构造:懒初始化的话,手机上从未注册过 Esc 时
+  /// [dispose] 会是第一次访问,而此时 `ref` 已不可用(riverpod 断言
+  /// "Using ref when a widget is about to or has been unmounted")。
+  late final ShortcutScopeBinding _shortcutScopeBinding;
 
   @override
   void initState() {
     super.initState();
+    _shortcutScopeBinding = ShortcutScopeBinding(
+      ref: ref,
+      scope: ShortcutScope.context,
+      // 底栏 tab 形态挂在 IndexedStack 里:不活跃时注册失效,否则截胡
+      // 其他 tab 的 ESC(共享根路由,路由过滤分不出活跃 tab)。
+      enabled: () => widget.isActive,
+    );
     if (PlatformUtils.isDesktop) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;

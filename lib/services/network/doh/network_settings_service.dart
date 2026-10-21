@@ -841,6 +841,9 @@ class NetworkSettingsService {
         _setStartFailed(true);
         _setPendingStart(false);
         await _clearWebViewProxy();
+        // 和下面 start 失败的分支一致：代理没起来就得清掉端口，
+        // 否则 Dio 仍指向 127.0.0.1 的不存在端口，所有请求直接失败
+        await _clearProxyPort();
         return;
       }
 

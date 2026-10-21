@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 
 import '../../models/category.dart';
@@ -141,12 +142,28 @@ class TopicCardLayout {
   static int _minuteEpoch = 0;
   static bool _clockHooked = false;
 
+  static void _onClockTick() => _minuteEpoch++;
+
   static int _currentMinuteEpoch() {
     if (!_clockHooked) {
       _clockHooked = true;
-      RelativeTimeClock.instance.addListener(() => _minuteEpoch++);
+      RelativeTimeClock.instance.addListener(_onClockTick);
     }
     return _minuteEpoch;
+  }
+
+  /// 测试专用:解绑分钟心跳并清空排版缓存。
+  ///
+  /// 心跳 hook 是进程级的(只注册一次、永不解除),测试里若留着它,
+  /// `testWidgets` 结束时的待触发 Timer 会报「A Timer is still pending」。
+  @visibleForTesting
+  static void debugResetClockHook() {
+    if (_clockHooked) {
+      RelativeTimeClock.instance.removeListener(_onClockTick);
+      _clockHooked = false;
+    }
+    _cache.clear();
+    _minuteEpoch = 0;
   }
 
   /// 存入缓存(替换旧实例)并按需 LRU。**内容变化必产出新实例**:

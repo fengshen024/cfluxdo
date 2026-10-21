@@ -176,6 +176,9 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   melos: ^7.5.1
   dart_console: ^4.1.4
+  # 测试里替换 path_provider 实现（`flutter test` 没有插件，Windows 上
+  # DoH 的 per-device CA 分支会因此失败）
+  path_provider_platform_interface: ^2.1.3
 
 melos:
   useRootAsPackage: true

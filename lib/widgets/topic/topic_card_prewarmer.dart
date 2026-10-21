@@ -63,6 +63,9 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
 
   Object? _lastSignature;
 
+  /// 当前这条 idle 链的句柄,换代/销毁时取消
+  IdleTask? _idleTask;
+
   static const int _budgetMicros = 4000;
 
   /// 预热规模上限:TopicCardLayout 全局 LRU 上限 500(满了清一半),
@@ -83,10 +86,15 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
   @override
   void dispose() {
     _generation++;
+    _idleTask?.cancel();
+    _idleTask = null;
     super.dispose();
   }
 
   void _restart() {
+    // 换代即弃:老链的定时器必须真取消,`canceled()` 只能拦住任务体,
+    // 拦不住已排定的下一跳(测试里会报残留 Timer)。
+    _idleTask?.cancel();
     final generation = ++_generation;
     var index = 0;
     bool canceled() => !mounted || generation != _generation;
@@ -119,11 +127,11 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
       }
       _bakeGlyphs(baked);
       if (index < limit) {
-        scheduleIdleTask(step, isCanceled: canceled);
+        _idleTask = scheduleIdleTask(step, isCanceled: canceled);
       }
     }
 
-    scheduleIdleTask(step, isCanceled: canceled);
+    _idleTask = scheduleIdleTask(step, isCanceled: canceled);
   }
 
   /// 字形预烤:把本步新排版的段落离屏光栅化一次,字形提前进引擎

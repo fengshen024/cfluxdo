@@ -9,6 +9,8 @@ import 'package:fluxdo/services/network/doh/network_settings_service.dart';
 import 'package:fluxdo/services/network/doh_proxy/doh_proxy_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'doh_test_support.dart';
+
 /// 假的加速服务端：记录调用，按设定返回
 class _FakeApi implements AccelDohApi {
   int startCalls = 0;
@@ -82,11 +84,15 @@ void main() {
     final flow = _FakeConnectFlow();
 
     late DohServer accelServer;
+    late void Function() restorePathProvider;
 
     String activeUrl() => service.latencyTestTarget(accelServer).url;
     String? activeToken() => service.latencyTestTarget(accelServer).authToken;
 
     setUpAll(() async {
+      // Windows 上 DoH 走 per-device CA 分支，会调 path_provider；
+      // `flutter test` 没有插件实现，见 doh_test_support.dart
+      restorePathProvider = await useFakePathProvider();
       final now = DateTime.now();
       SharedPreferences.setMockInitialValues({
         'doh_accel_token': jsonEncode({
@@ -121,6 +127,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
       await DohProxyService.instance.stop();
+      restorePathProvider();
     });
 
     test('冷启动读回已存的令牌，直接走专属加速', () async {

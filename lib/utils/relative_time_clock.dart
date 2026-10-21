@@ -25,14 +25,20 @@ class RelativeTimeClock extends ChangeNotifier {
 
   Timer? _timer;
 
+  /// 自己维护一份订阅者名单:`ChangeNotifier` 的 `_listeners` 是私有字段,
+  /// [debugStop] 需要它来强制解绑(见那里的说明)。
+  final Set<VoidCallback> _registered = <VoidCallback>{};
+
   @override
   void addListener(VoidCallback listener) {
+    _registered.add(listener);
     super.addListener(listener);
     _ensureTimer();
   }
 
   @override
   void removeListener(VoidCallback listener) {
+    _registered.remove(listener);
     super.removeListener(listener);
     if (!hasListeners) {
       _timer?.cancel();
@@ -56,5 +62,21 @@ class RelativeTimeClock extends ChangeNotifier {
       notifyListeners();
       _schedule();
     });
+  }
+
+  /// 测试专用:停掉心跳。
+  ///
+  /// 这是进程级单例,`testWidgets` 结束时若还有订阅者(例如自绘卡的排版
+  /// 缓存持有的一次性 hook),待触发的 Timer 会让测试框架报
+  /// 「A Timer is still pending」。测试里配合各持有方的解绑一起调用。
+  @visibleForTesting
+  void debugStop() {
+    _timer?.cancel();
+    _timer = null;
+    // 测试用例结束时 widget 树可能还没 detach（清理跑在框架检查之前），
+    // 订阅者仍在。这里直接清空，避免残留订阅在下一帧又把心跳拉起来。
+    for (final listener in List<VoidCallback>.from(_registered)) {
+      removeListener(listener);
+    }
   }
 }
