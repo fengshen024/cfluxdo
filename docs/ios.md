@@ -117,15 +117,15 @@ dart run tool/build_ipa_nosign.dart 1.1.0 -y
 
 安装步骤见 [sideloadly.md](sideloadly.md)。
 
-### 3.5 子模块与 iOS 改动
+### 3.5 Rust 侧改动与单仓结构
 
 iOS 移植的 Rust 部分（`forced_family`、`doh_proxy_set_forced_family`）在
-`core/doh_proxy` 子模块里，指向 `cfluxdo` 分支。CI 按子模块**已推送的提交**构建，
-所以：
+`core/doh_proxy` 里。这个目录上游是独立仓库 `1molchuan/fluxdo_doh` 的 `cfluxdo`
+分支，本仓库只做快照合并，**不是子模块**——改完直接提交进主仓库，CI 立刻就用上。
 
-- 只改本地子模块不推送 → CI 出的 IPA 里没有 `doh_proxy_set_forced_family`，
-  WebView 出口对齐失效（工作流会给 `::warning::`，不会失败）
-- 推送子模块后，还要在主仓库把 `core/doh_proxy` 的新提交号提交进去，CI 才会用上
+判断产物里有没有带上对齐能力，看工作流的
+「校验 Rust 侧含 iOS 地址族对齐」步骤；出现 `::warning::` 说明当前提交里的
+`core/doh_proxy/src/ffi.rs` 还没有那个导出。
 
 ### 3.6 直接用 Xcode 跑真机
 

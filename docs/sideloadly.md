@@ -15,15 +15,13 @@ Apple ID、一根数据线。
 ### 1.1 让仓库先把代码推上去
 
 IPA 由 `.github/workflows/ios-ipa.yaml` 构建，触发条件是「手动运行」或「推送
-`v*` tag」。第一次用之前，确认 fork / 仓库里至少有这些内容：
+`v*` tag」。第一次用之前，确认仓库里至少有这些内容：
 
 - `ios/` 工程、`apple/Local.xcconfig.example`、`tool/build_ipa_nosign.dart`
 - `.github/workflows/ios-ipa.yaml`
-- 两个子模块都能拉下来：`core/doh_proxy`（`cfluxdo` 分支）与
-  `packages/fluxdo_render`
+- `core/doh_proxy`（Rust 源码）与 `packages/fluxdo_render`（pub workspace 成员）
 
-工作流里 `actions/checkout` 带 `submodules: recursive`，子模块缺一个就会在
-`pub get` 或 `cargo` 阶段失败。
+两者都在主仓库里，不是子模块，`git clone` 不需要 `--recurse-submodules`。
 
 ### 1.2 手动跑一次
 
@@ -43,10 +41,9 @@ Artifacts 里留一份——发布日志与其它平台的产物仍由原来的�
 
 ### 1.4 构建日志里要看的两个点
 
-- `校验子模块是否含 iOS 地址族对齐` 步骤：出现 `::warning::` 说明子模块
-  `core/doh_proxy` 还指在没有 iOS 出口对齐的旧提交上。包照样能装能用，但
-  WebView 与 API 的出口地址族不会对齐，掉登录/弹盾会比预期频繁。修法见
-  [ios.md](ios.md) §3.5。
+- `校验 Rust 侧含 iOS 地址族对齐` 步骤：出现 `::warning::` 说明仓库里的
+  `core/doh_proxy` 还没有 iOS 出口对齐那个导出。包照样能装能用，但 WebView 与
+  API 的出口地址族不会对齐，掉登录/弹盾会比预期频繁。见 [ios.md](ios.md) §3.5。
 - `构建未签名 IPA` 步骤末尾会打印 `==> IPA 已输出: build/ios/ipa/...`。
 
 ## 2. 在电脑上装 Sideloadly

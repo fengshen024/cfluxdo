@@ -1,6 +1,6 @@
 # cfluxdo
 
-> 面向国内网络环境的 [Linux.do](https://linux.do/) 第三方 Android / iOS 客户端，基于 [FluxDO](https://github.com/Lingyan000/fluxdo) 独立发行
+> 面向国内网络环境的 [Linux.do](https://linux.do/) 第三方 Android / iOS 客户端，参考 [cfluxdo](https://github.com/1molchuan/fluxdo) 与 [FluxDO](https://github.com/Lingyan000/fluxdo) 两个项目
 
 [![GitHub Release](https://img.shields.io/github/v/release/1molchuan/fluxdo?style=for-the-badge&logo=github&label=GitHub%20Releases)](https://github.com/1molchuan/fluxdo/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20arm64%20%7C%20armv7%20%7C%20iOS%2015%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/1molchuan/fluxdo/releases)
@@ -51,7 +51,7 @@ cfluxdo 源自 FluxDO 0.2.28，已脱离 fork 关系独立维护。它保留了 
 - `just`（可选，仅作为本地命令入口）
 
 ```bash
-git clone --recurse-submodules https://github.com/1molchuan/fluxdo.git
+git clone https://github.com/1molchuan/fluxdo.git
 cd fluxdo
 dart run melos bootstrap                 # 初始化 workspace
 dart run tool/project_prep.dart app      # pub get、l10n 生成、代理证书同步，等价于 just sync
@@ -77,10 +77,12 @@ dart run tool/build_ipa_nosign.dart
 
 版本号约定：`--build-name` 是用户可见的版本号，`--build-number` 用「日期 + 两位序号」且只增不减。Git tag 与版本号一致，不带 `v` 前缀。预发布版本带 `-beta` 一类后缀，GitHub Release 标为 Pre-release；App 内的更新检查只看正式版（Latest），不会推送预发布版本。
 
-子模块：
+两个原本是子模块的目录，现在直接放在仓库里（单仓，`git clone` 不需要 `--recurse-submodules`）：
 
 - `core/doh_proxy`：Rust 实现的本地优选、ECH、DoH 代理与本地网关，来自 [1molchuan/fluxdo_doh](https://github.com/1molchuan/fluxdo_doh) 的 `cfluxdo` 分支。`cargo run --example race --features ech` 可以在电脑上跑一轮竞速看结果。
-- `packages/fluxdo_render`：上游的渲染包
+- `packages/fluxdo_render`：来自 [Lingyan000/fluxdo_render](https://github.com/Lingyan000/fluxdo_render) 的渲染包
+
+> 两者在上游都是独立仓库，这里只做了快照合并，方便一次 clone 完；它们的上游仍在独立演进，需要同步时按上游仓库手动合并。
 
 更多开发细节见 [docs/development.md](docs/development.md)。部分文档仍是上游多平台时期的内容，正在整理。
 
@@ -99,7 +101,7 @@ fluxdo/
 │   ├── widgets/             # 可复用组件
 │   └── main.dart
 ├── core/
-│   └── doh_proxy/           # Rust 本地优选与 DoH 代理（子模块）
+│   └── doh_proxy/           # Rust 本地优选与 DoH 代理（上游 fluxdo_doh）
 ├── packages/                # 本地依赖包
 └── pubspec.yaml
 ```
@@ -113,7 +115,7 @@ fluxdo/
 
 ## 致谢与协议
 
-cfluxdo 基于 [Lingyan000/fluxdo](https://github.com/Lingyan000/fluxdo)，感谢 FluxDO 的作者与所有贡献者，也感谢 [Linux.do](https://linux.do/) 社区。
+本项目是 [1molchuan/fluxdo](https://github.com/1molchuan/fluxdo)（cfluxdo）与 [Lingyan000/fluxdo](https://github.com/Lingyan000/fluxdo)（FluxDO）两个项目的参考实现，感谢两位作者与所有贡献者；Rust 侧的本地优选、ECH 与 DoH 代理参考 [1molchuan/fluxdo_doh](https://github.com/1molchuan/fluxdo_doh)，渲染包参考 [Lingyan000/fluxdo_render](https://github.com/Lingyan000/fluxdo_render)。也感谢 [Linux.do](https://linux.do/) 社区。
 
 本项目为非官方客户端，与 Linux.do 官方无直接关联。
 

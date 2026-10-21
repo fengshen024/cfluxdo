@@ -38,12 +38,10 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: 检出代码（含子模块）
+      - name: 检出代码
+        # core/doh_proxy 与 packages/fluxdo_render 都在主仓库里（单仓），
+        # 不需要 submodules
         uses: actions/checkout@v7
-        with:
-          # core/doh_proxy 与 packages/fluxdo_render 都是子模块，
-          # 缺任何一个 pub get / cargo 都跑不起来
-          submodules: recursive
 
       - name: 安装 Flutter
         uses: subosito/flutter-action@v2
@@ -70,16 +68,15 @@ jobs:
         # 但 `dart run` 需要先能解析 package:path 才能启动脚本本身
         run: flutter pub get
 
-      - name: 校验子模块是否含 iOS 地址族对齐
+      - name: 校验 Rust 侧含 iOS 地址族对齐
         # iOS 出口对齐依赖 core/doh_proxy 里的 doh_proxy_set_forced_family。
-        # 子模块 pin 在旧提交时，产物照样能构建，但那一半功能会静默失效，
-        # 所以放在最前面提示（不挡构建：没有它 App 仍可正常使用）。
+        # 缺了产物照样能构建，但那一半功能会静默失效，所以放在最前面提示
+        # （不挡构建：没有它 App 仍可正常使用）。
         run: |
-          SHA=$(git -C core/doh_proxy rev-parse --short HEAD)
           if grep -q 'doh_proxy_set_forced_family' core/doh_proxy/src/ffi.rs; then
-            echo "OK: 子模块 core/doh_proxy@$SHA 包含 doh_proxy_set_forced_family"
+            echo "OK: core/doh_proxy 含 doh_proxy_set_forced_family"
           else
-            echo "::warning::子模块 core/doh_proxy@$SHA 不含 doh_proxy_set_forced_family；本次 IPA 缺少 WebView 出口地址族对齐（见 docs/ios.md §3.5）"
+            echo "::warning::core/doh_proxy/src/ffi.rs 不含 doh_proxy_set_forced_family；本次 IPA 缺少 WebView 出口地址族对齐（见 docs/ios.md §3.5）"
           fi
 
       - name: 构建未签名 IPA
