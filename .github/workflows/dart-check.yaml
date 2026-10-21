@@ -115,5 +115,15 @@ jobs:
               while IFS= read -r line; do
                 echo "::error title=flutter test::${line//%/%%}"
               done
+
+            # 注解放不下完整堆栈，再写一份 job summary：公开仓库不登录也能看。
+            # 只保留失败段落，去掉逐条进度行，避免 summary 被刷爆。
+            {
+              echo '## flutter test 失败输出'
+              echo
+              echo '```text'
+              grep -v -E '^[0-9]{2}:[0-9]{2} \+[0-9]+: ' flutter-test.log | tail -n 400
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
