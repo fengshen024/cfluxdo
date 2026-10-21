@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,7 +45,9 @@ void main() {
     await tester.enterText(find.byType(TextField).at(2), 'test-key');
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.layers_outlined));
+    // 图标已全局统一为 Material Symbols Rounded（见 app_icons），
+    // 编辑页的「模型」页签用的是 Symbols.layers_rounded
+    await tester.tap(find.byIcon(Symbols.layers_rounded));
     await tester.pumpAndSettle();
 
     final modelAFinder = find.text('Model A');
