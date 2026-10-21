@@ -1,0 +1,67 @@
+name: Dart 检查
+
+# 每次推 main 与 PR 跑一遍 analyze + 全工作区测试。
+# 与本地 `just analyze` / `just test` 走同一套 tool 脚本，不另写一套检查逻辑。
+#
+# 不在这里编原生库：iOS / Android 的 Rust 产物由各自平台的构建任务负责，
+# Dart 侧测试不需要它们（FFI 在测试里全部 mock）。
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: dart-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: analyze + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出代码（含子模块）
+        uses: actions/checkout@v7
+        with:
+          # packages/fluxdo_render 是 pub workspace 成员，缺了 pub get 直接失败
+          submodules: recursive
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .fvmrc
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: 解析依赖
+        # tool/*.dart 要能被 `dart run` 起来，先要有 package_config
+        run: flutter pub get
+
+      - name: 准备生成代码
+        # l10n（slang 生成物不入库，analyze 前必须先生成）。
+        # `test` 子命令不碰代理证书，CI 上不需要 cargo。
+        run: dart run tool/project_prep.dart test
+
+      - name: 补代理证书目录
+        # pubspec 里声明了 assets/certs/，目录不存在时资产打包会打印
+        # 「unable to find directory entry」；CI 不跑 gen_ca（要编译 Rust），
+        # 建个空目录即可。测试不读这个证书，只要求目录存在。
+        run: mkdir -p assets/certs
+
+      - name: flutter analyze
+        # 与 `release:prepare` 的非严格模式一致：infos / warnings 只提示不挡，
+        # 报错级问题才失败
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: flutter test
+        # test:all 会按 pub workspace 逐个包跑，含 packages/*/test；
+        # 依赖 macOS 的 golden 测试在其它平台自行 skip
+        run: dart run tool/project_tasks.dart test:all

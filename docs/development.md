@@ -65,7 +65,11 @@ dart run tool/flutterw.dart run -d windows
 - `just release-check`：执行发版前检查
 - `just release`：稳定版发版入口
 - `just prerelease`：预发布发版入口
-- `just ipa`：构建无签名 iOS IPA
+- `just ipa`：构建无签名 iOS IPA（仅 macOS；细节见 [docs/ios.md](ios.md)）
+- 没有 Mac 时用 GitHub Actions 出 IPA：`.github/workflows/ios-ipa.yaml`
+  （Actions → **iOS 无签名 IPA**），安装见 [docs/sideloadly.md](sideloadly.md)
+- `.github/workflows/dart-check.yaml` 在推 `main` 与 PR 时跑
+  `flutter analyze` + 全工作区测试，与本地 `just analyze` / `just test` 同一条链路
 
 当透传参数以 `-` 开头时，记得用 `--` 分隔，例如：
 
@@ -102,6 +106,7 @@ just release -- patch --dry-run
 - 当本地签名材料缺失时，`debug` 使用默认 debug signing，`profile/release` 自动回退到 debug signing
 - Android 构建会优先使用 Android Studio 自带 JBR；如需手动指定，可设置 `FLUXDO_ANDROID_JAVA_HOME`
 - Apple 平台不再把 `DEVELOPMENT_TEAM` 写死在共享 `pbxproj`
+- iOS 工程最低支持 iOS 15，构建/签名/安装与平台差异见 [docs/ios.md](ios.md)
 - 如需 Xcode 真机签名或本地签名构建，复制 [apple/Local.xcconfig.example](/D:/teng/Documents/i/ldx/apple/Local.xcconfig.example:1) 为 `apple/Local.xcconfig`，按文件内注释选择签名方案
 - 原生产物准备统一走 `just native -- ...` 或 `dart run tool/project_tasks.dart native:prepare ...`
 - Windows / iOS 平台工程已移除内置 cargo / shell build hook，只消费仓库脚本预先落盘的 native 产物

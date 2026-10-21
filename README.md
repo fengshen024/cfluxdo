@@ -1,12 +1,12 @@
 # cfluxdo
 
-> 面向国内网络环境的 [Linux.do](https://linux.do/) 第三方 Android 客户端，基于 [FluxDO](https://github.com/Lingyan000/fluxdo) 独立发行
+> 面向国内网络环境的 [Linux.do](https://linux.do/) 第三方 Android / iOS 客户端，基于 [FluxDO](https://github.com/Lingyan000/fluxdo) 独立发行
 
 [![GitHub Release](https://img.shields.io/github/v/release/1molchuan/fluxdo?style=for-the-badge&logo=github&label=GitHub%20Releases)](https://github.com/1molchuan/fluxdo/releases)
-[![Platform](https://img.shields.io/badge/platform-Android%20arm64%20%7C%20armv7-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/1molchuan/fluxdo/releases)
+[![Platform](https://img.shields.io/badge/platform-Android%20arm64%20%7C%20armv7%20%7C%20iOS%2015%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/1molchuan/fluxdo/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 
-cfluxdo 源自 FluxDO 0.2.28，已脱离 fork 关系独立维护。它保留了 FluxDO 的全部论坛功能与界面，重点解决国内网络下访问 linux.do 时遇到的 DNS 污染、频繁弹 Cloudflare 验证、无征兆掉登录等问题，并且只做 Android。
+cfluxdo 源自 FluxDO 0.2.28，已脱离 fork 关系独立维护。它保留了 FluxDO 的全部论坛功能与界面，重点解决国内网络下访问 linux.do 时遇到的 DNS 污染、频繁弹 Cloudflare 验证、无征兆掉登录等问题。主力平台是 Android；iOS 侧在 0.2.28 的工程上重建，最低支持 iOS 15，cfluxdo 的连接方式（本地优选、ECH、cfhub 帮助优选）在 iOS 上同样可用，差异见 [docs/ios.md](docs/ios.md)。
 
 ## 下载安装
 
@@ -15,6 +15,7 @@ cfluxdo 源自 FluxDO 0.2.28，已脱离 fork 关系独立维护。它保留了 
   - `cfluxdo-<版本>-armeabi-v7a.apk`：32 位 ARM，只给装不上 arm64 包（报 `INSTALL_FAILED_NO_MATCHING_ABIS`）的老机器。
 - 包名是 `com.github.molchuan.cfluxdo`，与官方 FluxDO 不同：两者可以并存，但不能互相覆盖安装，登录态和设置也互不相通。
 - 应用内「关于 → 检查更新」会从本仓库的 Releases 获取新版本，并按手机架构挑选安装包。
+- iOS 目前只提供无签名 IPA（`cfluxdo-<版本>-nosign.ipa`），需要用 AltStore、Sideloadly 等工具用你自己的 Apple ID 自签安装；没有上架 App Store，也没有 TestFlight。没有 Mac 也可以：推 tag 或手动运行 GitHub Actions 的 **iOS 无签名 IPA** 工作流，从 Artifacts 下载 IPA，再用 [Sideloadly 安装](docs/sideloadly.md)。构建与平台差异见 [docs/ios.md](docs/ios.md)。
 
 ## 它怎么连接 linux.do
 
@@ -31,7 +32,7 @@ cfluxdo 源自 FluxDO 0.2.28，已脱离 fork 关系独立维护。它保留了 
 
 - **连接方式**：上面的本地优选替代了对加速服务端的依赖；原有的 DoH 加速线路降为兜底。
 - **弹盾与掉登录**：针对 Cloudflare 验证页、`cf_clearance` 与登录 Cookie `_t` 的轮换做了一系列修复，详见各版本的 Release 说明。
-- **仅 Android**：移除了 iOS、桌面、Web 的平台代码，以及 Cronet 网络引擎和 Firebase 崩溃上报。崩溃排查依靠应用内的日志导出。
+- **平台**：只保留 Android 与 iOS；桌面、Web 的平台代码，以及 Cronet 网络引擎和 Firebase 崩溃上报都已移除。崩溃排查依靠应用内的日志导出。iOS 上 WebView 内的流量无法走本地网关（iOS 17 以下没有 WebView 代理 API），只有 API 请求享受优选/ECH；为避免两边出口 IP 不一致导致掉登录/弹盾，iOS 侧会检测系统 VPN 与代理（检测到即自动压制 DoH 与上游代理），并用 WebView 实测出口地址族，把 API 压到同一族。
 - **上游补丁**：挑选上游尚未合并的 PR 一并接入，保留原作者署名。
 
 ## 隐私
@@ -62,6 +63,18 @@ dart tool/flutterw.dart build apk --release --target-platform android-arm \
 
 `flutterw` 会在构建前用 `cargo ndk` 编译对应架构的 Rust 库并放进 `android/app/src/main/jniLibs/`。两个架构各出一个 APK，不出合并包。
 
+iOS 只能在 macOS 上构建，前置要求额外多两项：Xcode 15+、`aarch64-apple-ios` 与 `aarch64-apple-ios-sim` 两个 Rust target。`flutterw build ios` 会用 `cargo rustc --crate-type staticlib` 编出 `ios/rust_libs/{device,simulator}/libdoh_proxy.a` 供 Xcode 静态链接（FFI 通过 `DynamicLibrary.process()` 取符号）。打包无签名 IPA：
+
+```bash
+dart run tool/build_ipa_nosign.dart
+```
+
+详细步骤、签名配置与 iOS 15 上的功能差异见 [docs/ios.md](docs/ios.md)。
+
+没有 Mac 时用 GitHub Actions 出包：Actions → **iOS 无签名 IPA** → Run workflow，
+跑完在 Artifacts 里下载 `cfluxdo-ipa-<ref>`，解压即 IPA；安装见
+[docs/sideloadly.md](docs/sideloadly.md)。
+
 版本号约定：`--build-name` 是用户可见的版本号，`--build-number` 用「日期 + 两位序号」且只增不减。Git tag 与版本号一致，不带 `v` 前缀。预发布版本带 `-beta` 一类后缀，GitHub Release 标为 Pre-release；App 内的更新检查只看正式版（Latest），不会推送预发布版本。
 
 子模块：
@@ -76,6 +89,8 @@ dart tool/flutterw.dart build apk --release --target-platform android-arm \
 ```
 fluxdo/
 ├── android/                 # Android 工程
+├── ios/                     # iOS 工程（Flutter 3.44 工具链，最低 iOS 15）
+├── apple/                   # 本地 Apple 签名配置（Local.xcconfig，不入库）
 ├── lib/
 │   ├── pages/               # 页面
 │   ├── providers/           # Riverpod 状态管理

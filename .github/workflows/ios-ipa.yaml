@@ -1,0 +1,129 @@
+name: iOS 无签名 IPA
+
+# 没有 Mac 也能出 IPA：在 GitHub 的 macOS runner 上跑
+# `tool/build_ipa_nosign.dart`，产物既可以当 Actions Artifact 下载，
+# 也可以在 tag 构建时自动挂到已存在的 Release 上。
+#
+# 构建链路与本地 `just ipa` 完全一致（flutterw → project_prep → native:prepare
+# ios → flutter build ios --no-codesign），CI 里只多环境胶水，不复制业务逻辑。
+#
+# 不做签名：免费 / 个人 Apple ID 的签名材料不放进仓库，IPA 由用户用
+# Sideloadly、AltStore 自签，见 docs/sideloadly.md。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'IPA 文件名里的版本号（留空则读 pubspec.yaml）'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+# 同一 ref 上只保留最新一次构建：tag 重复推送时不必排队跑旧代码
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  ipa:
+    name: 构建未签名 IPA
+    # 固定 macOS 15（默认 Xcode 16.4）：macos-latest 已指向 macOS 26 / Xcode 26，
+    # 工程还是经典 AppDelegate 生命周期，留在 16.x 上更稳（见 docs/ios.md §5.2）
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码（含子模块）
+        uses: actions/checkout@v7
+        with:
+          # core/doh_proxy 与 packages/fluxdo_render 都是子模块，
+          # 缺任何一个 pub get / cargo 都跑不起来
+          submodules: recursive
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # 版本锁在 .fvmrc（当前 3.44.8），与本地、与 docs/ios.md 保持同一条工具链
+          flutter-version-file: .fvmrc
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # _prepareIosNative 会同时编真机与模拟器两份静态库，两个 target 都要装
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: 缓存 Rust 构建产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/doh_proxy
+
+      - name: 解析依赖
+        # build_ipa_nosign.dart 自己会走 project_prep（pub get + l10n + 证书），
+        # 但 `dart run` 需要先能解析 package:path 才能启动脚本本身
+        run: flutter pub get
+
+      - name: 校验子模块是否含 iOS 地址族对齐
+        # iOS 出口对齐依赖 core/doh_proxy 里的 doh_proxy_set_forced_family。
+        # 子模块 pin 在旧提交时，产物照样能构建，但那一半功能会静默失效，
+        # 所以放在最前面提示（不挡构建：没有它 App 仍可正常使用）。
+        run: |
+          SHA=$(git -C core/doh_proxy rev-parse --short HEAD)
+          if grep -q 'doh_proxy_set_forced_family' core/doh_proxy/src/ffi.rs; then
+            echo "OK: 子模块 core/doh_proxy@$SHA 包含 doh_proxy_set_forced_family"
+          else
+            echo "::warning::子模块 core/doh_proxy@$SHA 不含 doh_proxy_set_forced_family；本次 IPA 缺少 WebView 出口地址族对齐（见 docs/ios.md §3.5）"
+          fi
+
+      - name: 构建未签名 IPA
+        env:
+          # workflow_dispatch 的输入在 tag 触发时为空
+          IPA_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$IPA_VERSION" ]; then
+            dart run tool/build_ipa_nosign.dart "$IPA_VERSION" -y
+          else
+            dart run tool/build_ipa_nosign.dart -y
+          fi
+
+      - name: 校验静态库已落盘
+        # pbxproj 用 -force_load 按 SDK 分别链接 ios/rust_libs/{device,simulator}
+        # 下的静态库，缺一个链接就会报找不到符号。构建能走到这里说明链接已过，
+        # 这一步只是把「产物确实存在」写进日志，方便排查缓存问题。
+        run: |
+          for LIB in ios/rust_libs/device/libdoh_proxy.a \
+                     ios/rust_libs/simulator/libdoh_proxy.a; do
+            test -f "$LIB" || { echo "::error::缺少静态库 $LIB"; exit 1; }
+            echo "OK: $LIB ($(du -h "$LIB" | cut -f1))"
+          done
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfluxdo-ipa-${{ github.ref_name }}
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          # IPA 体积在百 MB 量级，压缩收益很小，省掉这一步的 CPU
+          compression-level: 0
+
+      - name: 附加到 Release
+        # 只挂在已存在的 Release 上：Release 的创建与发布日志仍由发版流程负责，
+        # 这里不擅自新建，避免出现只有 IPA、没有其它平台产物的空 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/ios/ipa/*.ipa --clobber
+            echo "已上传到 Release $TAG"
+          else
+            echo "::notice::Release $TAG 尚不存在，跳过上传；IPA 见本次运行的 Artifacts"
+          fi

@@ -73,6 +73,11 @@ dart run tool/build_ipa_nosign.dart 0.2.3
 - 预发布版本通过 `--preid` 指定 `beta` / `rc`
 - iOS 无签名 IPA 只能在 macOS 上打包
 - `ios:ipa-nosign` 不传版本号时，会默认读取 `pubspec.yaml` 当前版本并进入确认
+- IPA 产物为 `build/ios/ipa/cfluxdo-<版本>-nosign.ipa`，用 AltStore / Sideloadly
+  等工具自签后安装；iOS 端包名 `com.github.molchuan.cfluxdo`，与 Android 一致
+- 打包前需先落盘 Rust 静态库：`dart run tool/project_tasks.dart native:prepare ios --release`
+  （`tool/build_ipa_nosign.dart` 走 `flutterw build ios` 时会自动补这一步，但要求
+  已安装 `cargo` 与 `aarch64-apple-ios` / `aarch64-apple-ios-sim` 两个 target）
 
 ## 常用示例
 
