@@ -127,3 +127,14 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
+
+      - name: 上传测试日志
+        # 注解和 summary 都有长度上限，完整堆栈只能走 Artifact。
+        # 只在失败时上传；公开仓库的 Artifact 任何人可下载。
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flutter-test-log
+          path: flutter-test.log
+          if-no-files-found: ignore
+          retention-days: 7
