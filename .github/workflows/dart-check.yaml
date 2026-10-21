@@ -95,5 +95,21 @@ jobs:
 
       - name: flutter test
         # test:all 会按 pub workspace 逐个包跑，含 packages/*/test；
-        # 依赖 macOS 的 golden 测试在其它平台自行 skip
-        run: dart run tool/project_tasks.dart test:all
+        # 依赖 macOS 的 golden 测试在其它平台自行 skip。
+        #
+        # 同 analyze：失败时把失败用例名写成注解，日志只有 admin 能下载，
+        # 注解走公开 API。
+        run: |
+          set +e
+          dart run tool/project_tasks.dart test:all 2>&1 | tee flutter-test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # 测试失败会打印 `[E]` 或 `Some tests failed`，用例名在
+            # `test/...dart: line` 那一行；直接抓 test/ 路径最稳
+            grep -E '(^|[^a-zA-Z0-9_/])test/.*\.dart' flutter-test.log \
+              | sed -E 's/^[[:space:]]*//' | sort -u | head -10 | \
+              while IFS= read -r line; do
+                echo "::error title=flutter test::${line//%/%%}"
+              done
+          fi
+          exit "$status"
