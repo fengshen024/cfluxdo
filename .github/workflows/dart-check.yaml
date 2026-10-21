@@ -125,6 +125,13 @@ jobs:
               grep -v -E '^[0-9]{2}:[0-9]{2} \+[0-9]+: ' flutter-test.log | tail -n 400
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+
+            # 再来一条多行注解带完整堆栈：%25 必须先转义，再转 %0A 换行，
+            # 否则消息里的 % 会被当成转义前缀吞掉后面的内容。
+            BODY=$(grep -v -E '^[0-9]{2}:[0-9]{2} \+[0-9]+: ' flutter-test.log \
+              | tail -n 120 | sed -e 's/%/%25/g' -e 's/\r$//' \
+              | awk '{printf "%s%%0A", $0}' | cut -c1-60000)
+            echo "::error title=flutter test 完整输出::${BODY}"
           fi
           exit "$status"
 
