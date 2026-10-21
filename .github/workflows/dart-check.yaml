@@ -104,13 +104,14 @@ jobs:
           dart run tool/project_tasks.dart test:all 2>&1 | tee flutter-test.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            # 失败用例在 `loading /abs/path/test/xxx_test.dart [E]` 这类行里，
-            # 路径是绝对路径，别给 test/ 加左边界。抓不到就退回最后 10 行。
-            REPORT=$(grep -E 'test/.*\.dart' flutter-test.log | sed -E 's/^[[:space:]]*//' | sort -u)
-            if [ -z "$REPORT" ]; then
-              REPORT=$(tail -n 10 flutter-test.log)
-            fi
-            printf '%s\n' "$REPORT" | head -10 | \
+            # 失败用例行形如 `00:11 +1 -1: /abs/test/x_test.dart: 用例名 [E]`，
+            # 只有带 [E] 的才是失败项（其它行是普通进度，还带一堆堆栈）。
+            # 先取失败用例，再用异常摘要补足到 10 条（每步注解上限 10）。
+            {
+              grep -F '[E]' flutter-test.log | sed -E 's/^[[:space:]]*//' | sort -u | head -6
+              grep -E '^[[:space:]]*(The following|Expected:|Actual:)' flutter-test.log \
+                | sed -E 's/^[[:space:]]*//' | sort -u | head -4
+            } | head -10 | \
               while IFS= read -r line; do
                 echo "::error title=flutter test::${line//%/%%}"
               done
