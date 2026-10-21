@@ -48,6 +48,17 @@ jobs:
         # `test` 子命令不碰代理证书，CI 上不需要 cargo。
         run: dart run tool/project_prep.dart test
 
+      - name: 解析独立包的依赖
+        # devtools_extension 与 fluxdo_render/example 是独立 app，不在 workspace
+        # 里（各自的 pubspec 写了 resolution: null），根目录的 pub get 不会给它们
+        # 生成 package_config.json。本地开发时在这两个目录里跑过 pub get，CI 上
+        # 没有；analyze 会扫到它们，缺配置就报一片 uri_does_not_exist。
+        run: |
+          for DIR in devtools_extension packages/fluxdo_render/example; do
+            echo "==> $DIR"
+            (cd "$DIR" && flutter pub get)
+          done
+
       - name: 补代理证书目录
         # pubspec 里声明了 assets/certs/，目录不存在时资产打包会打印
         # 「unable to find directory entry」；CI 不跑 gen_ca（要编译 Rust），
