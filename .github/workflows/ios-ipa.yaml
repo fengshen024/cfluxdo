@@ -32,8 +32,9 @@ permissions:
 jobs:
   ipa:
     name: 构建未签名 IPA
-    # 固定 macOS 15（默认 Xcode 16.4）：macos-latest 已指向 macOS 26 / Xcode 26，
-    # 工程还是经典 AppDelegate 生命周期，留在 16.x 上更稳（见 docs/ios.md §5.2）
+    # 固定 macOS 15：镜像上同时装了 Xcode 16.x 与 26.x，下面显式选 26
+    # （原因见「选择 Xcode」一步）。不跟 macos-latest，避免镜像换代时
+    # 工具链悄悄漂移。
     runs-on: macos-15
     timeout-minutes: 60
 
@@ -42,6 +43,20 @@ jobs:
         # core/doh_proxy 与 packages/fluxdo_render 都在主仓库里（单仓），
         # 不需要 submodules
         uses: actions/checkout@v7
+
+      - name: 选择 Xcode
+        # 必须用 Xcode 26：workmanager_apple 0.9.6+ 的
+        # BGContinuedProcessingTask 是 iOS 26 SDK 才有的类型，它只加了
+        # `@available(iOS 26.0, *)` 运行时判断，没有 SDK 级条件编译 ——
+        # 用镜像默认的 Xcode 16.4 编译会报 "Cannot find type in scope"。
+        #
+        # 不影响最低系统：Xcode 26 的最低 iOS 部署版本同样是 15
+        # （Apple 官方 Xcode 支持表），工程的 IPHONEOS_DEPLOYMENT_TARGET
+        # 保持 15.0，IPA 仍可装在 iOS 15 设备上。
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.2.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: 安装 Flutter
         uses: subosito/flutter-action@v2

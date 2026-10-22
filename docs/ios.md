@@ -209,6 +209,26 @@ TLS 在 Rust 侧完成。`dart:io` 的 `HttpClient` 不走 NSURLSession，所以
    时需要把 `AppDelegate` 迁到 `SceneDelegate` + `FlutterImplicitEngineDelegate`，
    可以参照上游 `main` 分支的 `ios/Runner/AppDelegate.swift`。
 
+6. **必须用 Xcode 26 构建**。`workmanager_apple` 从 0.9.6 起引入
+   `BGContinuedProcessingTask`（iOS 26 SDK 才有的类型），它只写了
+   `@available(iOS 26.0, *)` 运行时判断，没有 SDK 级条件编译。用 Xcode 16.x
+   编译会直接失败：
+
+   ```
+   Swift Compiler Error (Xcode): Cannot find type 'BGContinuedProcessingTask' in scope
+   ```
+
+   这条错误**降级插件也躲不掉**：0.9.6–0.9.11 全都有，只有退到 0.9.5 才没有，
+   而那会连带把 `workmanager_platform_interface` / `workmanager_android` 一起降级。
+   所以 CI（`.github/workflows/ios-ipa.yaml`）显式 `xcode-select` 到
+   `/Applications/Xcode_26.2.app`。
+
+   **不影响最低系统**：Apple 官方 Xcode 支持表里，Xcode 26 的最低 iOS 部署版本
+   仍是 15（范围 15–26），与 Xcode 16.4 相同。工程保持
+   `IPHONEOS_DEPLOYMENT_TARGET = 15.0`，IPA 照样能装在 iOS 15 设备上 ——
+   换的只是构建 SDK，不是运行要求。不要为了消掉上面那条 UIScene 警告把
+   Xcode 降回 16.x，那样 IPA 根本编不出来。
+
 ### 5.3 证书安装
 
 iOS 上 per-device CA 是强制的（`CertPreferenceService.isPerDeviceRequired`）。
