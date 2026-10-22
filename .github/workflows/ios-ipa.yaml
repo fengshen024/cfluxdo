@@ -83,12 +83,31 @@ jobs:
         env:
           # workflow_dispatch 的输入在 tag 触发时为空
           IPA_VERSION: ${{ inputs.version }}
+        # 失败时把输出尾部写成注解：job 日志只有仓库 admin 能下载，
+        # 注解走公开 API（同 dart-check.yaml 的做法）
         run: |
+          set +e
           if [ -n "$IPA_VERSION" ]; then
-            dart run tool/build_ipa_nosign.dart "$IPA_VERSION" -y
+            dart run tool/build_ipa_nosign.dart "$IPA_VERSION" -y 2>&1 | tee ipa-build.log
           else
-            dart run tool/build_ipa_nosign.dart -y
+            dart run tool/build_ipa_nosign.dart -y 2>&1 | tee ipa-build.log
           fi
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            BODY=$(tail -n 60 ipa-build.log | sed -e 's/%/%25/g' -e 's/\r$//' \
+              | awk '{printf "%s%%0A", $0}' | cut -c1-60000)
+            echo "::error title=构建未签名 IPA::${BODY}"
+          fi
+          exit "$status"
+
+      - name: 上传构建日志
+        # 注解有长度上限，完整输出留一份 Artifact
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ipa-build-log
+          path: ipa-build.log
+          if-no-files-found: ignore
 
       - name: 校验静态库已落盘
         # pbxproj 用 -force_load 按 SDK 分别链接 ios/rust_libs/{device,simulator}
